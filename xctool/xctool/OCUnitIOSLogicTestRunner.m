@@ -21,25 +21,34 @@
 
 @implementation OCUnitIOSLogicTestRunner
 
-- (NSTask *)otestTaskWithTestBundle:(NSString *)testBundlePath
+- (NSDictionary *)otestEnvironmentWithOverrides:(NSDictionary *)overrides
 {
   NSString *version = [_buildSettings[@"SDK_NAME"] stringByReplacingOccurrencesOfString:@"iphonesimulator" withString:@""];
   NSString *simulatorHome = [NSString stringWithFormat:@"%@/Library/Application Support/iPhone Simulator/%@", NSHomeDirectory(), version];
 
+  NSMutableDictionary *allOverrides =
+  [[@{
+    @"CFFIXED_USER_HOME" : simulatorHome,
+    @"HOME" : simulatorHome,
+    @"IPHONE_SHARED_RESOURCES_DIRECTORY" : simulatorHome,
+    @"DYLD_FALLBACK_FRAMEWORK_PATH" : @"/Developer/Library/Frameworks",
+    @"DYLD_FRAMEWORK_PATH" : _buildSettings[@"BUILT_PRODUCTS_DIR"],
+    @"DYLD_LIBRARY_PATH" : _buildSettings[@"BUILT_PRODUCTS_DIR"],
+    @"DYLD_ROOT_PATH" : _buildSettings[@"SDKROOT"],
+    @"IPHONE_SIMULATOR_ROOT" : _buildSettings[@"SDKROOT"],
+    @"IPHONE_SIMULATOR_VERSIONS" : @"iPhone Simulator (external launch) , iPhone OS 6.0 (unknown/10A403)",
+    @"NSUnbufferedIO" : @"YES",
+    } mutableCopy] autorelease];
+  [allOverrides addEntriesFromDictionary:overrides];
+  return [super otestEnvironmentWithOverrides:allOverrides];
+}
+
+- (NSTask *)otestTaskWithTestBundle:(NSString *)testBundlePath
+{
   NSTask *task = [[[NSTask alloc] init] autorelease];
   [task setLaunchPath:[NSString stringWithFormat:@"%@/Developer/usr/bin/otest", _buildSettings[@"SDKROOT"]]];
   [task setArguments:[[self otestArguments] arrayByAddingObject:testBundlePath]];
   [task setEnvironment:[self otestEnvironmentWithOverrides:@{
-                        @"CFFIXED_USER_HOME" : simulatorHome,
-                        @"HOME" : simulatorHome,
-                        @"IPHONE_SHARED_RESOURCES_DIRECTORY" : simulatorHome,
-                        @"DYLD_FALLBACK_FRAMEWORK_PATH" : @"/Developer/Library/Frameworks",
-                        @"DYLD_FRAMEWORK_PATH" : _buildSettings[@"BUILT_PRODUCTS_DIR"],
-                        @"DYLD_LIBRARY_PATH" : _buildSettings[@"BUILT_PRODUCTS_DIR"],
-                        @"DYLD_ROOT_PATH" : _buildSettings[@"SDKROOT"],
-                        @"IPHONE_SIMULATOR_ROOT" : _buildSettings[@"SDKROOT"],
-                        @"IPHONE_SIMULATOR_VERSIONS" : @"iPhone Simulator (external launch) , iPhone OS 6.0 (unknown/10A403)",
-                        @"NSUnbufferedIO" : @"YES",
                         @"DYLD_INSERT_LIBRARIES" : [PathToXCToolBinaries() stringByAppendingPathComponent:@"otest-shim-ios.dylib"],
                         }]];
   return task;
@@ -68,6 +77,17 @@
     *error = [NSString stringWithFormat:@"Test bundle not found at: %@", testBundlePath];
     return NO;
   }
+}
+
+- (NSArray *)runTestClassListQuery
+{
+  NSTask *task = [[[NSTask alloc] init] autorelease];
+  [task setLaunchPath:[PathToXCToolBinaries() stringByAppendingPathComponent:@"otest-query-ios"]];
+  [task setArguments:@[self.testBundlePath]];
+  [task setEnvironment:[self otestEnvironmentWithOverrides:@{}]];
+  NSDictionary *output = LaunchTaskAndCaptureOutput(task);
+  NSData *outputData = [output[@"stdout"] dataUsingEncoding:NSUTF8StringEncoding];
+  return [NSJSONSerialization JSONObjectWithData:outputData options:0 error:nil];
 }
 
 @end
